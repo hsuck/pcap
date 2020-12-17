@@ -50,9 +50,10 @@ int main( int argc, char **argv ){
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle = NULL;
     pcap_dumper_t *dumper = NULL;
-    
+    bpf_u_int32 net, mask;
+    struct bpf_program fcode;
+    char *device = "enp0s3"; 
     if( argc < 2 ){
-        char *device = "enp0s3";
         handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
         if( !handle ){
@@ -64,7 +65,7 @@ int main( int argc, char **argv ){
     }
     else{
         int num = 0;
-        char *filename = NULL, *dumpfile = NULL;
+        char *filename = NULL, *dumpfile = NULL, *proto = NULL;
         for( int i = 1; i < argc; i++ ){
             if( !strcmp( argv[i], "-n" ) && argv[i + 1] != NULL )
                 num = atoi( argv[i + 1] );
@@ -72,7 +73,11 @@ int main( int argc, char **argv ){
                 filename = argv[i + 1];
             if( !strcmp( argv[i], "-o" ) && argv[i + 1] != NULL )
                 dumpfile = argv[i + 1];
+            if( !strcmp( argv[i], "-p" ) && argv[i + 1] != NULL )
+                proto = argv[i + 1];
         }
+
+        //printf( "%s\n", filename );
         
         if( num != 0 && filename != NULL ){
             handle = pcap_open_offline( filename, errbuf );
@@ -82,6 +87,27 @@ int main( int argc, char **argv ){
                 exit(1);
             }
 
+            if( proto != NULL ){
+                if( -1 == pcap_lookupnet( device, &net, &mask, errbuf ) ){
+                    fprintf( stderr, "pcap_lookupnet failed: %s\n", errbuf );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_compile( handle, &fcode, proto, 1, mask ) ){
+                    fprintf( stderr, "pcap_compile failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_setfilter( handle, &fcode ) ){
+                    fprintf( stderr, "pcap_setfilter failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+            }
+            pcap_freecode( &fcode );
+         
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
                 if( !dumper ){
@@ -103,6 +129,27 @@ int main( int argc, char **argv ){
                 exit(1);
             }
             
+            if( proto != NULL ){
+                if( -1 == pcap_lookupnet( device, &net, &mask, errbuf ) ){
+                    fprintf( stderr, "pcap_lookupnet failed: %s\n", errbuf );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_compile( handle, &fcode, proto, 1, mask ) ){
+                    fprintf( stderr, "pcap_compile failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_setfilter( handle, &fcode ) ){
+                    fprintf( stderr, "pcap_setfilter failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+            }
+            pcap_freecode( &fcode );
+            
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
                 if( !dumper ){
@@ -117,7 +164,6 @@ int main( int argc, char **argv ){
                 pcap_loop( handle, num, pcap_callback, NULL );
         }    
         else if( num != 0 && filename == NULL ){
-            char *device = "enp0s3";
             handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
             if( !handle ){
@@ -125,6 +171,27 @@ int main( int argc, char **argv ){
                 exit(1);
             }
 
+            if( proto != NULL ){
+                if( -1 == pcap_lookupnet( device, &net, &mask, errbuf ) ){
+                    fprintf( stderr, "pcap_lookupnet failed: %s\n", errbuf );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_compile( handle, &fcode, proto, 1, mask ) ){
+                    fprintf( stderr, "pcap_compile failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+                
+                if( -1 == pcap_setfilter( handle, &fcode ) ){
+                    fprintf( stderr, "pcap_setfilter failed: %s\n", pcap_geterr( handle ) );
+                    pcap_close( handle );
+                    exit(1);
+                }
+            }
+            pcap_freecode( &fcode );
+            
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
                 if( !dumper ){
@@ -439,7 +506,7 @@ void dump_icmp( struct icmp *icmp ){
     if( type == ICMP_UNREACH || type == ICMP_REDIRECT || type == ICMP_TIMXCEED ){
         struct ip *ip = (struct ip *)icmp->icmp_data;
         char *p = (char *)ip + ( ip->ip_hl << 2 );
-        dump_ip( (struct ip *)p );    
+        dump_ip( ip );    
         switch( ip->ip_p ){
             case IPPROTO_TCP:
                 if( type == ICMP_REDIRECT )
