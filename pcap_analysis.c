@@ -3,16 +3,20 @@
 #include <pcap.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
+#include <netinet/in.h>
 #include <string.h>
 #include <time.h>
 #include <netinet/ip.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <netinet/ip_icmp.h>
+#include <net/if_arp.h>
+#include <netinet/if_ether.h>
 
 #define MAC_ADDR_LEN 18
 
 void dump_ethernet( u_int32_t len, const u_char *content );
+void dump_arp( struct ether_arp *arp );
 void dump_ip( struct ip *ip );
 void dump_tcp( struct tcphdr *tcp );
 void dump_tcp_mini( struct tcphdr *tcp );
@@ -52,8 +56,50 @@ int main( int argc, char **argv ){
     pcap_dumper_t *dumper = NULL;
     bpf_u_int32 net, mask;
     struct bpf_program fcode;
-    char *device = "enp0s3"; 
+    char *device = NULL;
+    pcap_if_t * d = NULL;
+    char ntop_buf[256];
+
+    if( -1 == pcap_findalldevs( &d, errbuf ) ){
+        fprintf( stderr, "pcap_findalldevs failed: %s\n", errbuf );
+        exit(1);
+    }
+
+    for( pcap_if_t *tmp = d; tmp; tmp = tmp->next ){
+        printf( "Interface: %s\n", tmp->name );
+
+        if( tmp->description )
+            printf( "\tDescription: %s\n", tmp->description );
+
+        printf( "\tLoopback: %s\n", ( tmp->flags & PCAP_IF_LOOPBACK ) ? "yes" : "no" );
+
+        for( struct pcap_addr *a = tmp->addresses; a; a = a->next ){
+            if( a->addr->sa_family == AF_INET ){
+                if( a->addr )
+                    printf( "\t\tAddress: %s\n"
+                         ,inet_ntop( AF_INET, &((struct sockaddr_in *)a->addr)->sin_addr, ntop_buf, sizeof( ntop_buf ) ) );
+
+                if( a->netmask )
+                    printf( "\t\tMask: %s\n"
+                         ,inet_ntop( AF_INET, &((struct sockaddr_in *)a->netmask)->sin_addr, ntop_buf, sizeof( ntop_buf ) ) );
+
+                if( a->broadaddr )
+                    printf( "\t\tBroad address: %s\n"
+                         ,inet_ntop( AF_INET, &((struct sockaddr_in *)a->broadaddr)->sin_addr, ntop_buf, sizeof( ntop_buf ) ) );
+
+                if( a->dstaddr )
+                    printf( "\t\tDestnation address: %s\n"
+                         ,inet_ntoa( ( (struct sockaddr_in *)a->dstaddr )->sin_addr ) );
+            }
+        }
+        printf("\n");
+    }
+    pcap_freealldevs( d );
+
     if( argc < 2 ){
+        printf("Choose the interface\n");
+        scanf( "%s", device );
+        
         handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
         if( !handle ){
@@ -164,6 +210,9 @@ int main( int argc, char **argv ){
                 pcap_loop( handle, num, pcap_callback, NULL );
         }    
         else if( num != 0 && filename == NULL ){
+            printf("Choose the interface\n");
+            scanf( "%s", device );
+            
             handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
             if( !handle ){
@@ -266,7 +315,7 @@ void dump_ethernet( u_int32_t len, const u_char *content ){
     type = ntohs( ethernet->ether_type );
 
     if( type <= 1500 )
-        printf("IEEE 802.3 Ethernet frame:\n");
+        printf("\n\tIEEE 802.3 Ethernet frame:\n");
     else
         printf("\n\tEthernet frame:\n");
 
@@ -285,7 +334,7 @@ void dump_ethernet( u_int32_t len, const u_char *content ){
 
     switch( type ){
         case ETHERTYPE_ARP:
-            printf("Next is ARP\n");
+            dump_arp( (struct ether_arp *)( content + ETHER_HDR_LEN ) );
             break;
         
         case ETHERTYPE_IP:
@@ -304,6 +353,48 @@ void dump_ethernet( u_int32_t len, const u_char *content ){
             printf( "Next is %#06x\n", type );
             break; 
     }
+}
+
+void dump_arp( struct ether_arp *arp ) {
+    u_short hardware_type = ntohs( arp->ea_hdr.ar_hrd );
+    u_short protocol_type = ntohs( arp->ea_hdr.ar_pro );
+    u_char hardware_len = arp->ea_hdr.ar_hln;
+    u_char protocol_len = arp->ea_hdr.ar_pln;
+    u_short operation = ntohs( arp->ea_hdr.ar_op );
+    struct in_addr *addr1 = NULL, *addr2 = NULL;
+    inet_aton( arp->arp_spa, addr1 );
+    inet_aton( arp->arp_tpa, addr2 );
+
+    static char *arp_op_name[] = {
+        "Undefine",
+        "(ARP Request)",
+        "(ARP Reply)",
+        "(RARP Request)",
+        "(RARP Reply)"
+    }; //arp option type
+
+    if( operation < 0 || sizeof( arp_op_name ) / sizeof( arp_op_name[0] ) < operation )
+        operation = 0;
+
+    printf("Protocol: ARP\n");
+    printf("+-------------------------+-------------------------+\n");
+    printf( "| Hard Type: %2u%-11s| Protocol:0x%04x%-9s|\n",
+           hardware_type,
+           ( hardware_type == ARPHRD_ETHER ) ? "(Ethernet)" : "(Not Ether)",
+           protocol_type,
+           ( protocol_type == ETHERTYPE_IP ) ? "(IP)" : "(Not IP)" );
+    printf("+------------+------------+-------------------------+\n");
+    printf( "| HardLen:%3u| Addr Len:%2u| OP: %4d%16s|\n",
+           hardware_len, protocol_len, operation, arp_op_name[operation] );
+    printf("+------------+------------+-------------------------+-------------------------+\n");
+    printf( "| Source MAC Address:                                        %17s|\n", mac_transfer( arp->arp_sha ) );
+    printf("+---------------------------------------------------+-------------------------+\n");
+    printf( "| Source IP Address:                 %15s|\n", inet_ntoa( *addr1 ) );
+    printf("+---------------------------------------------------+-------------------------+\n");
+    printf("| Destination MAC Address:                                   %17s|\n", mac_transfer( arp->arp_tha ) );
+    printf("+---------------------------------------------------+-------------------------+\n");
+    printf( "| Destination IP Address:            %15s|\n", inet_ntoa( *addr2 ) );
+    printf("+---------------------------------------------------+\n");
 }
 
 char *ip_ttoa( u_int8_t flag ){
