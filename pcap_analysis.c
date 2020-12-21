@@ -56,7 +56,7 @@ int main( int argc, char **argv ){
     pcap_dumper_t *dumper = NULL;
     bpf_u_int32 net, mask;
     struct bpf_program fcode;
-    char *device = NULL;
+    char device[16] = {0};
     pcap_if_t * d = NULL;
     char ntop_buf[256];
 
@@ -99,6 +99,9 @@ int main( int argc, char **argv ){
     if( argc < 2 ){
         printf("Choose the interface\n");
         scanf( "%s", device );
+        //printf( "%s", device );
+        //int len = strlen( device );
+        //device[len - 1] = '\0';
         
         handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
@@ -151,8 +154,8 @@ int main( int argc, char **argv ){
                     pcap_close( handle );
                     exit(1);
                 }
+                pcap_freecode( &fcode );
             }
-            pcap_freecode( &fcode );
          
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
@@ -193,8 +196,8 @@ int main( int argc, char **argv ){
                     pcap_close( handle );
                     exit(1);
                 }
+                pcap_freecode( &fcode );
             }
-            pcap_freecode( &fcode );
             
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
@@ -212,6 +215,9 @@ int main( int argc, char **argv ){
         else if( num != 0 && filename == NULL ){
             printf("Choose the interface\n");
             scanf( "%s", device );
+            //printf( "%s", device );
+            //int len = strlen( device );
+            //device[len - 1] = '\0';
             
             handle = pcap_open_live( device, 65535, 1, 1, errbuf );
 
@@ -238,8 +244,8 @@ int main( int argc, char **argv ){
                     pcap_close( handle );
                     exit(1);
                 }
+                pcap_freecode( &fcode );
             }
-            pcap_freecode( &fcode );
             
             if( dumpfile != NULL ){
                 dumper = pcap_dump_open( handle, dumpfile );
@@ -361,9 +367,9 @@ void dump_arp( struct ether_arp *arp ) {
     u_char hardware_len = arp->ea_hdr.ar_hln;
     u_char protocol_len = arp->ea_hdr.ar_pln;
     u_short operation = ntohs( arp->ea_hdr.ar_op );
-    struct in_addr *addr1 = NULL, *addr2 = NULL;
-    inet_aton( arp->arp_spa, addr1 );
-    inet_aton( arp->arp_tpa, addr2 );
+    struct in_addr addr1, addr2;
+    inet_aton( arp->arp_spa, &addr1 );
+    inet_aton( arp->arp_tpa, &addr2 );
 
     static char *arp_op_name[] = {
         "Undefine",
@@ -376,25 +382,25 @@ void dump_arp( struct ether_arp *arp ) {
     if( operation < 0 || sizeof( arp_op_name ) / sizeof( arp_op_name[0] ) < operation )
         operation = 0;
 
-    printf("Protocol: ARP\n");
-    printf("+-------------------------+-------------------------+\n");
-    printf( "| Hard Type: %2u%-11s| Protocol:0x%04x%-9s|\n",
+    printf("\n\tProtocol: ARP\n");
+    printf("\t+-------------------------+-------------------------+\n");
+    printf( "\t| Hard Type: %2u%-11s| Protocol:0x%04x%-9s|\n",
            hardware_type,
            ( hardware_type == ARPHRD_ETHER ) ? "(Ethernet)" : "(Not Ether)",
            protocol_type,
            ( protocol_type == ETHERTYPE_IP ) ? "(IP)" : "(Not IP)" );
-    printf("+------------+------------+-------------------------+\n");
-    printf( "| HardLen:%3u| Addr Len:%2u| OP: %4d%16s|\n",
+    printf("\t+------------+------------+-------------------------+\n");
+    printf( "\t| HardLen:%3u| Addr Len:%2u| OP: %4d%16s|\n",
            hardware_len, protocol_len, operation, arp_op_name[operation] );
-    printf("+------------+------------+-------------------------+-------------------------+\n");
-    printf( "| Source MAC Address:                                        %17s|\n", mac_transfer( arp->arp_sha ) );
-    printf("+---------------------------------------------------+-------------------------+\n");
-    printf( "| Source IP Address:                 %15s|\n", inet_ntoa( *addr1 ) );
-    printf("+---------------------------------------------------+-------------------------+\n");
-    printf("| Destination MAC Address:                                   %17s|\n", mac_transfer( arp->arp_tha ) );
-    printf("+---------------------------------------------------+-------------------------+\n");
-    printf( "| Destination IP Address:            %15s|\n", inet_ntoa( *addr2 ) );
-    printf("+---------------------------------------------------+\n");
+    printf("\t+------------+------------+-------------------------+-------------------------+\n");
+    printf( "\t| Source MAC Address:                                        %17s|\n", mac_transfer( arp->arp_sha ) );
+    printf("\t+---------------------------------------------------+-------------------------+\n");
+    printf( "\t| Source IP Address:                 %15s|\n", inet_ntoa( addr1 ) );
+    printf("\t+---------------------------------------------------+-------------------------+\n");
+    printf("\t| Destination MAC Address:                                   %17s|\n", mac_transfer( arp->arp_tha ) );
+    printf("\t+---------------------------------------------------+-------------------------+\n");
+    printf( "\t| Destination IP Address:            %15s|\n", inet_ntoa( addr2 ) );
+    printf("\t+---------------------------------------------------+\n");
 }
 
 char *ip_ttoa( u_int8_t flag ){
